@@ -1,0 +1,13 @@
+**/*.exe
+**/*.so
+**/*.a
+**/*.dll
+**/*.lib
+**/bin
+**/build
+**/out
+
+**/.vs
+**/.atom
+**/.vscode
+**/.idea
