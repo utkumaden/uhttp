@@ -29,10 +29,32 @@ int uhttp_client_create(uhttp_client_t* client)
 
 void uhttp_client_destroy(uhttp_client_t* client)
 {
-    return;
+#if _WIN32
+    closesocket(client->sck);
+#else
+    close(client->sck);
+#endif
 }
 
 int uhttp_client_event(uhttp_client_t* client)
 {
+    int revents = client->pollfd->revents;
+
+    if (revents & POLLHUP)
+    {
+        uhttp_server_close_client(client);
+        return 0;
+    }
+    
+    if (revents & POLLERR)
+    {
+        // TODO:
+    }
+    
+    if (revents & POLLNVAL)
+    {
+        // TODO:
+    }
+
     return 0;
 }

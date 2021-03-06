@@ -23,11 +23,12 @@
 
 #include "uhttp.h"
 
+#include "list.h"
 #include "client.h"
 
-#include "stdlib.h"
-#include "errno.h"
-#include "stdio.h"
+#include <stdlib.h>
+#include <errno.h>
+#include <stdio.h>
 
 #if !_WIN32
 typedef int SOCKET;
@@ -47,13 +48,11 @@ struct uhttp_server_t
     struct sockaddr bind_addr;
     unsigned int bind_addr_len;
 
-    /* Client List */
-    uhttp_client_t* clients;
-    unsigned int clients_len;
+    /* Clients list. */
+    uhttp_list_t clients;
 
-    /* Poll List */
-    struct pollfd* pollfds;
-    unsigned int pollfds_len;
+    /* Poll File Descriptors. */
+    uhttp_list_t pollfds;
 
     /* Error function. */
     uhttp_error_func_t on_error;
@@ -83,14 +82,12 @@ UHTTPAPI uhttp_server_t* uhttp_create()
         memset(&sv->bind_addr, 0, sizeof(struct sockaddr));
         sv->bind_addr_len = 0;
 
-        // Clear client list.
-        sv->clients = NULL;
-        sv->clients_len = 0;
+        // Init client list.
+        uhttp_list_create(&sv->clients, sizeof(uhttp_client_t));
 
-        // Clear pollfds.
-        sv->pollfds = NULL;
-        sv->pollfds_len = 0;
-
+        // Init pollfd list.
+        uhttp_list_create(&sv->pollfds, sizeof(struct pollfd));
+        
         // Set error callback.
         sv->on_error = uhttp_error_default;
     }
@@ -186,7 +183,7 @@ UHTTPAPI int uhttp_start(uhttp_server_t* sv)
 
     // Allocate listen socket.
     SOCKET sck = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sck < 0)
+    if (sck == -1)
     {
         errno = ECANCELED;
         return -1;
@@ -225,16 +222,19 @@ UHTTPAPI int uhttp_poll(uhttp_server_t* sv)
     // Try accepting new sockets.
     {
         struct sockaddr addr;
-        unsigned int len;
+        unsigned int len = sizeof(addr);
         SOCKET nclient = accept(sv->sck, &addr, &len);
 
-        if (nclient >= 0)
+        if (nclient != -1)
         {
+            uhttp_client_t* newclient;
+            struct pollfd* newpollfd;
+
             uhttp_client_t* clients = realloc(sv->clients, sizeof(uhttp_client_t) * (sv->clients_len + 1));
             if (clients)
             {
                 sv->clients = clients;
-                uhttp_client_t* newclient = &sv->clients[sv->clients_len++];
+                newclient = &sv->clients[sv->clients_len++];
 
                 if (uhttp_client_create(newclient))
                 {
@@ -256,6 +256,7 @@ UHTTPAPI int uhttp_poll(uhttp_server_t* sv)
                         sv->on_error(errno = ENOMEM, "Downsize clients list failed (uhttp_poll)");
                     }
                     --sv->clients_len;
+                    return -1;
                 }
             }
             else
@@ -275,10 +276,10 @@ UHTTPAPI int uhttp_poll(uhttp_server_t* sv)
             if (newpollfds)
             {
                 sv->pollfds = newpollfds;
-                struct pollfd * pollfd = &newpollfds[sv->pollfds_len++];
+                newpollfd = &newpollfds[sv->pollfds_len++];
 
-                pollfd->fd = nclient;
-                pollfd->events = 0;
+                newpollfd->fd = nclient;
+                newpollfd->events = 0;
             }
             else
             {
@@ -295,7 +296,15 @@ UHTTPAPI int uhttp_poll(uhttp_server_t* sv)
                     sv->on_error((errno = ENOMEM), "Could not shrink clients list");
                 }
                 --sv->clients_len;
+
+                return -1;
             }
+
+            newclient->server = sv;
+            newclient->sck = nclient;
+            newclient->pollfd = newpollfd;
+            memcpy(&newclient->addr, &addr, len);
+            newclient->addr_len = len;
         }
     }
 
@@ -322,7 +331,6 @@ void uhttp_server_close_client(uhttp_client_t* client)
     // Find client object in server.
     uhttp_server_t* sv = client->server;
 
-
     int i = 0;
     for (int i = 0; i < sv->clients_len; i++)
     {
@@ -336,7 +344,7 @@ void uhttp_server_close_client(uhttp_client_t* client)
     // Remove from clients list.
     memmove(&sv->clients[i], &sv->clients[i + 1], sizeof(uhttp_client_t) * (sv->clients_len - i - 1));
     uhttp_client_t* newclients = realloc(sv->clients, sizeof(uhttp_client_t) * (sv->clients_len - 1));
-    if (newclients == NULL)
+    if (newclients == NULL && sv->clients_len > 1)
     {
         // Leak last pointer.
         sv->on_error((errno = ENOMEM), "Realloc failed to downsize clients list, (uhttp_server_close_client)");
@@ -348,9 +356,9 @@ void uhttp_server_close_client(uhttp_client_t* client)
     --sv->clients_len;
 
     // Remove from pollfds.
-    memmove(&sv->pollfds[i], &sv->pollfds[i + 1], sizeof(uhttp_client_t) * (sv->clients_len - i - 1));
-    struct pollfd* newpollfds = realloc(sv->clients, sizeof(uhttp_client_t) * (sv->clients_len - 1));
-    if (newpollfds == NULL)
+    memmove(&sv->pollfds[i], &sv->pollfds[i + 1], sizeof(uhttp_client_t) * (sv->pollfds_len - i - 1));
+    struct pollfd* newpollfds = realloc(sv->pollfds, sizeof(uhttp_client_t) * (sv->pollfds_len - 1));
+    if (newpollfds == NULL && sv->pollfds_len > 1)
     {
         // Leak last pointer, again.
         sv->on_error((errno = ENOMEM), "Realloc failed to downsize pollfds list, (uhttp_server_close_client)");
