@@ -380,7 +380,7 @@ UHTTPAPI int uhttp_stop(uhttp_server_t* sv)
 #endif
 
     // Close all clients.
-    for (int i = 0; i < sv->clients; i++)
+    for (int i = 0; i < sv->clients_len; i++)
     {
         uhttp_client_destroy(&sv->clients[i]);
     }
