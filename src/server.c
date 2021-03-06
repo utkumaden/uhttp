@@ -63,7 +63,7 @@ struct uhttp_server_t
 void uhttp_error_default(int number, const char* description)
 {
 #ifdef _DEBUG
-    fprintf(stderr, "uhttp: (errno=%d) %s", number, description);
+    fprintf(stderr, "uhttp: (errno=%d) %s\n", number, description);
 #endif
 }
 
@@ -120,6 +120,7 @@ UHTTPAPI int uhttp_setoption(uhttp_server_t* sv, uhttp_option_name_t name, const
     {
     default:
         errno = EINVAL;
+        sv->on_error(EINVAL, "Unknown option (uhttp_setoption)");
         return -1;
     case UHTTP_OPTION_BIND_ADDR:
         sv->bind_addr_len = value->bind_addr.len;
@@ -153,6 +154,7 @@ UHTTPAPI int uhttp_getoption(uhttp_server_t* sv, uhttp_option_name_t name, uhttp
     {
     default:
         errno = EINVAL;
+        sv->on_error(EINVAL, "Unknown option (uhttp_getoption)");
         return -1;
     case UHTTP_OPTION_BIND_ADDR:
         value->bind_addr.len = sv->bind_addr_len;
@@ -237,6 +239,7 @@ UHTTPAPI int uhttp_poll(uhttp_server_t* sv)
                 if (uhttp_client_create(newclient))
                 {
                     // Close connection due to error.
+                    sv->on_error(errno = ENOMEM, "Could not create client. (uhttp_poll)");
 #ifdef _WIN32
                     closesocket(nclient);
 #else
@@ -246,14 +249,13 @@ UHTTPAPI int uhttp_poll(uhttp_server_t* sv)
                     if (newclient)
                     {
                         sv->clients = newclient;
-                        --sv->clients_len;
                     }
                     else
                     {
-                        // RAM overflow.
-                        errno = ENOMEM;
-                        return -1;
+                        // Memory issue, leak last slot.
+                        sv->on_error(errno = ENOMEM, "Downsize clients list failed (uhttp_poll)");
                     }
+                    --sv->clients_len;
                 }
             }
             else
@@ -265,9 +267,34 @@ UHTTPAPI int uhttp_poll(uhttp_server_t* sv)
                 close(nclient);
 #endif
 
-
-                errno = ENOMEM;
+                sv->on_error(errno = ENOMEM, "Could not allocate new clients list (uhttp_poll).");
                 return -1;
+            }
+
+            struct pollfd* newpollfds = realloc(sv->pollfds, sizeof(struct pollfd) * (sv->pollfds_len + 1));
+            if (newpollfds)
+            {
+                sv->pollfds = newpollfds;
+                struct pollfd * pollfd = &newpollfds[sv->pollfds_len++];
+
+                pollfd->fd = nclient;
+                pollfd->events = 0;
+            }
+            else
+            {
+                sv->on_error((errno = ENOMEM), "Could not expand pollfds list.");
+                uhttp_client_destroy(&sv->clients[sv->clients_len - 1]);
+
+                clients = realloc(sv->clients, sizeof(uhttp_client_t) * (sv->clients_len - 1));
+                if (clients)
+                {
+                    sv->clients = clients;
+                }
+                else
+                {
+                    sv->on_error((errno = ENOMEM), "Could not shrink clients list");
+                }
+                --sv->clients_len;
             }
         }
     }
@@ -292,6 +319,48 @@ UHTTPAPI int uhttp_poll(uhttp_server_t* sv)
 
 void uhttp_server_close_client(uhttp_client_t* client)
 {
+    // Find client object in server.
+    uhttp_server_t* sv = client->server;
+
+
+    int i = 0;
+    for (int i = 0; i < sv->clients_len; i++)
+    {
+        if (&sv->clients[i] == client) break;
+    }
+
+    if (i >= sv->clients_len) return;
+
+    uhttp_client_destroy(client);
+
+    // Remove from clients list.
+    memmove(&sv->clients[i], &sv->clients[i + 1], sizeof(uhttp_client_t) * (sv->clients_len - i - 1));
+    uhttp_client_t* newclients = realloc(sv->clients, sizeof(uhttp_client_t) * (sv->clients_len - 1));
+    if (newclients == NULL)
+    {
+        // Leak last pointer.
+        sv->on_error((errno = ENOMEM), "Realloc failed to downsize clients list, (uhttp_server_close_client)");
+    }
+    else
+    {
+        sv->clients = newclients;
+    }
+    --sv->clients_len;
+
+    // Remove from pollfds.
+    memmove(&sv->pollfds[i], &sv->pollfds[i + 1], sizeof(uhttp_client_t) * (sv->clients_len - i - 1));
+    struct pollfd* newpollfds = realloc(sv->clients, sizeof(uhttp_client_t) * (sv->clients_len - 1));
+    if (newpollfds == NULL)
+    {
+        // Leak last pointer, again.
+        sv->on_error((errno = ENOMEM), "Realloc failed to downsize pollfds list, (uhttp_server_close_client)");
+    }
+    else
+    {
+        sv->pollfds = newpollfds;
+    }
+    --sv->pollfds_len;
+
     return;
 }
 
