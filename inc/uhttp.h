@@ -23,18 +23,126 @@
 #ifndef _UHTTP_H_
 #define _UHTTP_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #ifdef _WIN32
 #include "winsock2.h"
 
 #ifdef _UHTTP_INTERNAL_
-#define UHTTPAPI __declspec(dllexport) extern
+#define UHTTP_EXTERN __declspec(dllexport) extern
 #else
-#define UHTTPAPI __declspec(dllimport) extern
+#define UHTTP_EXTERN __declspec(dllimport) extern
 #endif
 
+typedef SOCKET uhttp_sock_t;
+typedef int64_t ssize_t;
+
 #else
-#define UHTTPAPI extern
+#define UHTTP_EXTERN extern
+
+typedef int uhttp_sock_t;
 #endif
+
+/* UHTTP SOCKETS */
+
+typedef enum uhttp_socket_domain_t {
+    UHTTP_SOCKET_DOMAIN_INET4 = 4,
+    UHTTP_SOCKET_DOMAIN_INET6 = 6
+} uhttp_socket_domain_t;
+
+typedef enum uhttp_event_t {
+    UHTTP_EVENT_HANGUP  = 1,
+    UHTTP_EVENT_ERROR   = 2,
+    UHTTP_EVENT_RECEIVE = 4
+} uhttp_event_t;
+
+typedef struct uhttp_addr_t
+{
+    uhttp_socket_domain_t      domain;
+    uint16_t                   port;
+    uint8_t                    address[16];
+} uhttp_addr_t;
+
+#define UHTTP_INVALID_SOCKET ((uhttp_sock_t)-1)
+
+
+/**
+ * Initalize socket subsystem.
+ * @return Zero when successful, else see errno.
+ */
+UHTTP_EXTERN int uhttp_socket_init();
+
+/**
+ * Clean up socket susbsystem.
+ */
+UHTTP_EXTERN void uhttp_socket_deinit();
+
+/**
+ * Create a socket.
+ * @param Binding address of the socket.
+ * @return A valid socket object or UHTTP_INVALID_SOCKET.
+ */
+UHTTP_EXTERN uhttp_sock_t uhttp_socket(uhttp_addr_t* addr);
+
+/**
+ * Listen socket.
+ * @param sock Socket object.
+ * @param backlog Length of connection queue.
+ * @return Zero when successfull, see errno otherwise.
+ */
+UHTTP_EXTERN int uhttp_listen(uhttp_sock_t sock, int backlog);
+
+/**
+ * Set or reset socket async mode.
+ * @param sock Socket object.
+ * @param flag Zero to reset, anything else to reset.
+ * @return Zero when successful, see errno otherwise.
+ */
+UHTTP_EXTERN int uhttp_async(uhttp_sock_t sock, int flag);
+
+/**
+ * Accept connection.
+ * @param sock Socket object.
+ * @param addr Source address of new socket object.
+ * @return A new socket object or UHTTP_INVALID_SOCKET if no incoming connections or an error.
+ */
+UHTTP_EXTERN uhttp_sock_t uhttp_accept(uhttp_sock_t sock, uhttp_addr_t *addr);
+
+/**
+ * Poll socket events.
+ * @param socks List of sockets.
+ * @param events Returned list of events.
+ * @param count Number of elements in lists.
+ * @return Zero if successfull, see errno otherwise.
+ */
+UHTTP_EXTERN int uhttp_poll(const uhttp_sock_t* socks, uhttp_event_t* events, size_t count);
+
+/**
+ * Recieve data.
+ * @param sock Socket object.
+ * @param buffer Buffer to read into.
+ * @param len Length of buffer.
+ * @return Number of bytes read, or -1 for error (see errno).
+ */
+UHTTP_EXTERN ssize_t uhttp_recv(uhttp_sock_t sock, void* buffer, size_t len);
+
+/**
+ * Send data.
+ * @param sock Socket object.
+ * @param buffer Buffer to write from.
+ * @param len Length of data to send.
+ * @return Number of bytes sent, or -1 for error (see errno).
+ */
+UHTTP_EXTERN ssize_t uhttp_send(uhttp_sock_t sock, const void* buffer, size_t len);
+
+/**
+ * Close socket.
+ * @param sock Socket object.
+ */
+UHTTP_EXTERN void uhttp_close(uhttp_sock_t sock);
+
+/* UHTTP SERVER */
 
 /**
  * uHTTP server object.
@@ -80,12 +188,12 @@ typedef union uhttp_option_arg_t {
  * Create uHTTP server object.
  * @return Handle to server object or NULL for failure (see errno)
  */
-UHTTPAPI uhttp_server_t* uhttp_create();
+UHTTP_EXTERN uhttp_server_t* uhttp_create();
 /**
  * Destroy a uHTTP server object.
  * @param sv Server object.
  */
-UHTTPAPI void uhttp_destroy(uhttp_server_t* sv);
+UHTTP_EXTERN void uhttp_destroy(uhttp_server_t* sv);
 
 /**
  * Set server options.
@@ -97,7 +205,7 @@ UHTTPAPI void uhttp_destroy(uhttp_server_t* sv);
  * @see uhttp_option_name_t
  * @see uhttp_option_arg_t
  */
-UHTTPAPI int uhttp_setoption(uhttp_server_t* sv, uhttp_option_name_t name, const uhttp_option_arg_t *value);
+UHTTP_EXTERN int uhttp_setoption(uhttp_server_t* sv, uhttp_option_name_t name, const uhttp_option_arg_t *value);
 
 /**
  * Get server options.
@@ -109,27 +217,27 @@ UHTTPAPI int uhttp_setoption(uhttp_server_t* sv, uhttp_option_name_t name, const
  * @see uhttp_option_name_t
  * @see uhttp_option_arg_t
  */
-UHTTPAPI int uhttp_getoption(uhttp_server_t* sv, uhttp_option_name_t name, uhttp_option_arg_t *value);
+UHTTP_EXTERN int uhttp_getoption(uhttp_server_t* sv, uhttp_option_name_t name, uhttp_option_arg_t *value);
 
 /**
  * Start server.
  * @param sv Server object.
  * @return Zero when successful, see errno otherwise.
  */
-UHTTPAPI int uhttp_start(uhttp_server_t* sv);
+UHTTP_EXTERN int uhttp_start(uhttp_server_t* sv);
 
 /**
  * Poll for server events.
  * @param sv Server object.
  * @return Zero when successful, see errno otherwise.
  */
-UHTTPAPI int uhttp_poll(uhttp_server_t* sv);
+UHTTP_EXTERN int uhttp_poll(uhttp_server_t* sv);
 
 /**
  * Stop server, close all connections.
  * param sv Server object.
  * @return Zero when successful, see errno otherwise.
  */
-UHTTPAPI int uhttp_stop(uhttp_server_t* sv);
+UHTTP_EXTERN int uhttp_stop(uhttp_server_t* sv);
 
 #endif

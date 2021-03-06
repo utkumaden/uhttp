@@ -10,7 +10,8 @@ set(
 	UHTTP_SOURCES
 	"src/server.c"
 	"src/client.c"
-	"src/list.c")
+	"src/list.c"
+	"src/winsock.c")
 
 add_library(
 uhttp-shared
