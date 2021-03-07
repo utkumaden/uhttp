@@ -9,39 +9,28 @@ int spin = 1;
 
 int main(int argc, char** argv)
 {
-#ifdef _WIN32
-    WSADATA data;
-    WSAStartup(MAKEWORD(2,0), &data);
-#endif
+    uhttp_socket_init();
 
     server = uhttp_create();
 
     uhttp_option_arg_t arg;
-    struct sockaddr_in addr;
-
-    addr.sin_family = AF_INET;
-    addr.sin_port = 8080;
-    addr.sin_addr.S_un.S_un_b.s_b1 = 127;
-    addr.sin_addr.S_un.S_un_b.s_b2 = 0;
-    addr.sin_addr.S_un.S_un_b.s_b3 = 0;
-    addr.sin_addr.S_un.S_un_b.s_b4 = 1;
-
-    memcpy(&arg.bind_addr, &addr, sizeof(addr));
-    arg.bind_addr.len = sizeof(addr);
-
+    arg.addr.domain = UHTTP_SOCKET_DOMAIN_INET4;
+    arg.addr.port = 8080;
+    arg.addr.address[0] = 127;
+    arg.addr.address[1] = 0;
+    arg.addr.address[2] = 0;
+    arg.addr.address[3] = 1;
     uhttp_setoption(server, UHTTP_OPTION_BIND_ADDR, &arg);
 
     uhttp_start(server);
 
     while (spin)
     {
-        uhttp_poll(server);
+        uhttp_pollevents(server);
     }
 
     uhttp_stop(server);
 
-#if _WIN32
-    WSACleanup();
-#endif
+    uhttp_socket_deinit();
     return 0;
 }

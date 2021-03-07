@@ -24,34 +24,28 @@
 
 int uhttp_client_create(uhttp_client_t* client)
 {
+    client->events = 0;
     return 0;
 }
 
 void uhttp_client_destroy(uhttp_client_t* client)
 {
-#if _WIN32
-    closesocket(client->sck);
-#else
-    close(client->sck);
-#endif
+    uhttp_close(client->sck);
 }
 
 int uhttp_client_event(uhttp_client_t* client)
 {
-    int revents = client->pollfd->revents;
-
-    if (revents & POLLHUP)
+    if (client->events & UHTTP_EVENT_HANGUP)
     {
         uhttp_server_close_client(client);
-        return 0;
     }
-    
-    if (revents & POLLERR)
+
+    if (client->events & UHTTP_EVENT_ERROR)
     {
         // TODO:
     }
-    
-    if (revents & POLLNVAL)
+
+    if (client->events & UHTTP_EVENT_RECEIVE)
     {
         // TODO:
     }

@@ -60,7 +60,7 @@ int uhttp_list_append(uhttp_list_t* list, const void* element)
     }
 
     list->head = xhead;
-    memcpy((char*)list->head + ((++list->nlen) * list->nsize), element, list->nsize);
+    memcpy((char*)list->head + ((list->nlen++) * list->nsize), element, list->nsize);
 
     return 0;
 }
@@ -93,3 +93,17 @@ int uhttp_list_remove(uhttp_list_t* list, int index)
     return 0;
 }
 
+int uhttp_list_clear(uhttp_list_t* list)
+{
+    if (list == NULL)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    free(list->head);
+    list->head = NULL;
+    list->nlen = 0;
+
+    return 0;
+}

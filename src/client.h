@@ -30,13 +30,12 @@
 
 typedef struct uhttp_client_t
 {
-    uhttp_server_t* server;
+    uhttp_server_t* sv;
 
-    SOCKET sck;
-    struct sockaddr addr;
-    int addr_len;
+    uhttp_socket_t sck;
+    uhttp_event_t events;
+    uhttp_addr_t src;
 
-    struct pollfd *pollfd;
 } uhttp_client_t;
 
 /**

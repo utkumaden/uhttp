@@ -67,6 +67,13 @@ extern int uhttp_list_append(uhttp_list_t* list, void* element);
  */
 extern int uhttp_list_remove(uhttp_list_t* list, int index);
 
-#define uhttp_list_index(list, type, index) (((type)*)(list)->head)[(index)]
+/**
+ * Remove all elements from list.
+ * @param list List object.
+ * @return Zero when successful, see errno otherwise.
+ */
+extern int uhttp_list_clear(uhttp_list_t* list);
+
+#define uhttp_list_index(list, type, index) ((type*)(list)->head)[(index)]
 
 #endif

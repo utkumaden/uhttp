@@ -29,10 +29,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <stdio.h>
-
-#if !_WIN32
-typedef int SOCKET;
-#endif
+#include <string.h>
 
 #define UHTTP_BACKLOG_DEFAULT 16
 
@@ -45,14 +42,10 @@ struct uhttp_server_t
     int backlog;
 
     /* Bound socket address. */
-    struct sockaddr bind_addr;
-    unsigned int bind_addr_len;
+    uhttp_addr_t addr;
 
     /* Clients list. */
     uhttp_list_t clients;
-
-    /* Poll File Descriptors. */
-    uhttp_list_t pollfds;
 
     /* Error function. */
     uhttp_error_func_t on_error;
@@ -66,10 +59,10 @@ void uhttp_error_default(int number, const char* description)
 #endif
 }
 
-UHTTPAPI uhttp_server_t* uhttp_create()
+UHTTP_EXTERN uhttp_server_t* uhttp_create()
 {
     uhttp_server_t* sv = malloc(sizeof(uhttp_server_t));
-    
+
     if (sv)
     {
         // Initialize sockets list.
@@ -79,15 +72,11 @@ UHTTPAPI uhttp_server_t* uhttp_create()
         sv->backlog = UHTTP_BACKLOG_DEFAULT;
 
         // Clear bind address.
-        memset(&sv->bind_addr, 0, sizeof(struct sockaddr));
-        sv->bind_addr_len = 0;
+        memset(&sv->addr, 0, sizeof(sv->addr));
 
         // Init client list.
         uhttp_list_create(&sv->clients, sizeof(uhttp_client_t));
 
-        // Init pollfd list.
-        uhttp_list_create(&sv->pollfds, sizeof(struct pollfd));
-        
         // Set error callback.
         sv->on_error = uhttp_error_default;
     }
@@ -95,7 +84,7 @@ UHTTPAPI uhttp_server_t* uhttp_create()
     return sv;
 }
 
-UHTTPAPI void uhttp_destroy(uhttp_server_t* sv)
+UHTTP_EXTERN void uhttp_destroy(uhttp_server_t* sv)
 {
     if (sv)
     {
@@ -105,7 +94,7 @@ UHTTPAPI void uhttp_destroy(uhttp_server_t* sv)
     free(sv);
 }
 
-UHTTPAPI int uhttp_setoption(uhttp_server_t* sv, uhttp_option_name_t name, const uhttp_option_arg_t* value)
+UHTTP_EXTERN int uhttp_setoption(uhttp_server_t* sv, uhttp_option_name_t name, const uhttp_option_arg_t* value)
 {
     if (sv == NULL)
     {
@@ -120,8 +109,7 @@ UHTTPAPI int uhttp_setoption(uhttp_server_t* sv, uhttp_option_name_t name, const
         sv->on_error(EINVAL, "Unknown option (uhttp_setoption)");
         return -1;
     case UHTTP_OPTION_BIND_ADDR:
-        sv->bind_addr_len = value->bind_addr.len;
-        memcpy(&sv->bind_addr, &value->bind_addr.addr, value->bind_addr.len);
+        memcpy(&sv->addr, &value->addr, sizeof(sv->addr));
         return 0;
     case UHTTP_OPTION_BACKLOG:
         sv->backlog = (value->integer) ? value->integer : UHTTP_BACKLOG_DEFAULT;
@@ -139,7 +127,7 @@ UHTTPAPI int uhttp_setoption(uhttp_server_t* sv, uhttp_option_name_t name, const
     }
 }
 
-UHTTPAPI int uhttp_getoption(uhttp_server_t* sv, uhttp_option_name_t name, uhttp_option_arg_t* value)
+UHTTP_EXTERN int uhttp_getoption(uhttp_server_t* sv, uhttp_option_name_t name, uhttp_option_arg_t* value)
 {
     if (sv == NULL)
     {
@@ -154,8 +142,7 @@ UHTTPAPI int uhttp_getoption(uhttp_server_t* sv, uhttp_option_name_t name, uhttp
         sv->on_error(EINVAL, "Unknown option (uhttp_getoption)");
         return -1;
     case UHTTP_OPTION_BIND_ADDR:
-        value->bind_addr.len = sv->bind_addr_len;
-        memcpy(&value->bind_addr.addr, &sv->bind_addr, sv->bind_addr_len);
+        memcpy(&value->addr, &sv->addr, sizeof(sv->addr));
         return 0;
     case UHTTP_OPTION_BACKLOG:
         value->integer = sv->backlog;
@@ -173,7 +160,7 @@ UHTTPAPI int uhttp_getoption(uhttp_server_t* sv, uhttp_option_name_t name, uhttp
     }
 }
 
-UHTTPAPI int uhttp_start(uhttp_server_t* sv)
+UHTTP_EXTERN int uhttp_start(uhttp_server_t* sv)
 {
     if (sv == NULL)
     {
@@ -182,36 +169,23 @@ UHTTPAPI int uhttp_start(uhttp_server_t* sv)
     }
 
     // Allocate listen socket.
-    SOCKET sck = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sck == -1)
-    {
-        errno = ECANCELED;
-        return -1;
-    }
+    sv->sck = uhttp_socket(&sv->addr);
 
-    sv->sck = sck;
-
-    // Bind socket.
-    if (bind(sck, &sv->bind_addr, sv->bind_addr_len))
+    if (sv->sck == UHTTP_INVALID_SOCKET)
     {
         return -1;
     }
 
     // Listen on socket.
-    if (listen(sck, sv->backlog))
+    if (uhttp_listen(sv->sck, sv->backlog))
     {
         return -1;
     }
 
-#if _WIN32
-    u_long opt = 1;
-    ioctlsocket(sck, FIONBIO, &opt);
-#endif
-
-    return 0;
+    return uhttp_async(sv->sck, 1);
 }
 
-UHTTPAPI int uhttp_poll(uhttp_server_t* sv)
+UHTTP_EXTERN int uhttp_pollevents(uhttp_server_t* sv)
 {
     if (sv == NULL)
     {
@@ -221,104 +195,41 @@ UHTTPAPI int uhttp_poll(uhttp_server_t* sv)
 
     // Try accepting new sockets.
     {
-        struct sockaddr addr;
-        unsigned int len = sizeof(addr);
-        SOCKET nclient = accept(sv->sck, &addr, &len);
-
-        if (nclient != -1)
+        uhttp_addr_t addr;
+        uhttp_socket_t xsck;
+        while ((xsck = uhttp_accept(sv->sck, &addr)) != UHTTP_INVALID_SOCKET)
         {
-            uhttp_client_t* newclient;
-            struct pollfd* newpollfd;
-
-            uhttp_client_t* clients = realloc(sv->clients, sizeof(uhttp_client_t) * (sv->clients_len + 1));
-            if (clients)
+            uhttp_client_t client;
+            if (uhttp_client_create(&client))
             {
-                sv->clients = clients;
-                newclient = &sv->clients[sv->clients_len++];
-
-                if (uhttp_client_create(newclient))
-                {
-                    // Close connection due to error.
-                    sv->on_error(errno = ENOMEM, "Could not create client. (uhttp_poll)");
-#ifdef _WIN32
-                    closesocket(nclient);
-#else
-                    close(nclient);
-#endif
-                    newclient = realloc(sv->clients, sizeof(uhttp_client_t) *(sv->clients_len - 1));
-                    if (newclient)
-                    {
-                        sv->clients = newclient;
-                    }
-                    else
-                    {
-                        // Memory issue, leak last slot.
-                        sv->on_error(errno = ENOMEM, "Downsize clients list failed (uhttp_poll)");
-                    }
-                    --sv->clients_len;
-                    return -1;
-                }
-            }
-            else
-            {
-                // Ram overflow.
-#ifdef _WIN32
-                closesocket(nclient);
-#else
-                close(nclient);
-#endif
-
-                sv->on_error(errno = ENOMEM, "Could not allocate new clients list (uhttp_poll).");
-                return -1;
+                sv->on_error(errno, "Could not create client object. (uhttp_poll)");
+                uhttp_close(xsck);
+                continue;
             }
 
-            struct pollfd* newpollfds = realloc(sv->pollfds, sizeof(struct pollfd) * (sv->pollfds_len + 1));
-            if (newpollfds)
+            client.sck = xsck;
+            client.sv = sv;
+            memcpy(&client.src, &addr, sizeof(addr));
+
+            if (uhttp_list_append(&sv->clients, &client))
             {
-                sv->pollfds = newpollfds;
-                newpollfd = &newpollfds[sv->pollfds_len++];
-
-                newpollfd->fd = nclient;
-                newpollfd->events = 0;
+                sv->on_error(errno, "Could not append client to list.");
+                uhttp_client_destroy(&client);
+                continue;
             }
-            else
-            {
-                sv->on_error((errno = ENOMEM), "Could not expand pollfds list.");
-                uhttp_client_destroy(&sv->clients[sv->clients_len - 1]);
-
-                clients = realloc(sv->clients, sizeof(uhttp_client_t) * (sv->clients_len - 1));
-                if (clients)
-                {
-                    sv->clients = clients;
-                }
-                else
-                {
-                    sv->on_error((errno = ENOMEM), "Could not shrink clients list");
-                }
-                --sv->clients_len;
-
-                return -1;
-            }
-
-            newclient->server = sv;
-            newclient->sck = nclient;
-            newclient->pollfd = newpollfd;
-            memcpy(&newclient->addr, &addr, len);
-            newclient->addr_len = len;
         }
     }
 
     // Poll all open sockets.
     {
-#if _WIN32
-        WSAPoll(sv->pollfds, sv->pollfds_len, 0);
-#endif
-
-        int error;
-        // Call events on all client objects.
-        for (int i = 0; i < sv->clients_len; i++)
+        for (size_t i = 0; i < sv->clients.nlen; i++)
         {
-            error = uhttp_client_event(&sv->clients[i]);
+            uhttp_client_t* client = &((uhttp_client_t*)sv->clients.head)[i];
+
+            if (uhttp_poll(client->sck, &client->events) == 0)
+            {
+                uhttp_client_event(client);
+            }
         }
     }
 
@@ -329,50 +240,26 @@ UHTTPAPI int uhttp_poll(uhttp_server_t* sv)
 void uhttp_server_close_client(uhttp_client_t* client)
 {
     // Find client object in server.
-    uhttp_server_t* sv = client->server;
+    uhttp_server_t* sv = client->sv;
 
-    int i = 0;
-    for (int i = 0; i < sv->clients_len; i++)
+    size_t i = 0;
+    for (i = 0; i < sv->clients.nlen; i++)
     {
-        if (&sv->clients[i] == client) break;
+        if (((uhttp_client_t*)sv->clients.head)[i].sck == client->sck)
+            break;
     }
 
-    if (i >= sv->clients_len) return;
+    // Return if not found.
+    if (i >= sv->clients.nlen) return;
 
-    uhttp_client_destroy(client);
+    // Close client.
+    uhttp_client_destroy(&((uhttp_client_t*)sv->clients.head)[i]);
 
-    // Remove from clients list.
-    memmove(&sv->clients[i], &sv->clients[i + 1], sizeof(uhttp_client_t) * (sv->clients_len - i - 1));
-    uhttp_client_t* newclients = realloc(sv->clients, sizeof(uhttp_client_t) * (sv->clients_len - 1));
-    if (newclients == NULL && sv->clients_len > 1)
-    {
-        // Leak last pointer.
-        sv->on_error((errno = ENOMEM), "Realloc failed to downsize clients list, (uhttp_server_close_client)");
-    }
-    else
-    {
-        sv->clients = newclients;
-    }
-    --sv->clients_len;
-
-    // Remove from pollfds.
-    memmove(&sv->pollfds[i], &sv->pollfds[i + 1], sizeof(uhttp_client_t) * (sv->pollfds_len - i - 1));
-    struct pollfd* newpollfds = realloc(sv->pollfds, sizeof(uhttp_client_t) * (sv->pollfds_len - 1));
-    if (newpollfds == NULL && sv->pollfds_len > 1)
-    {
-        // Leak last pointer, again.
-        sv->on_error((errno = ENOMEM), "Realloc failed to downsize pollfds list, (uhttp_server_close_client)");
-    }
-    else
-    {
-        sv->pollfds = newpollfds;
-    }
-    --sv->pollfds_len;
-
-    return;
+    // Remove client.
+    uhttp_list_remove(&sv->clients, i);
 }
 
-UHTTPAPI int uhttp_stop(uhttp_server_t* sv)
+UHTTP_EXTERN int uhttp_stop(uhttp_server_t* sv)
 {
     if (sv == NULL)
     {
@@ -381,24 +268,15 @@ UHTTPAPI int uhttp_stop(uhttp_server_t* sv)
     }
 
     // Close main socket.
-#if _WIN32
-    closesocket(sv->sck);
-#else
-    close(sv->sockets[i]);
-#endif
+    uhttp_close(sv->sck);
 
     // Close all clients.
-    for (int i = 0; i < sv->clients_len; i++)
+    for (size_t i = 0; i < sv->clients.nlen; i++)
     {
-        uhttp_client_destroy(&sv->clients[i]);
+        uhttp_client_t* client = &((uhttp_client_t*)sv->clients.head)[i];
+        uhttp_client_destroy(client);
     }
-    free(sv->clients);
-    sv->clients = NULL;
-    sv->clients_len = 0;
-    
-    // Close list of open pollfds.
-    free(sv->pollfds);
-    sv->pollfds_len = 0;
+    uhttp_list_clear(&sv->clients);
 
     return 0;
 }

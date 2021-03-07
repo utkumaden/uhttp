@@ -24,7 +24,7 @@ UHTTP_EXTERN void uhttp_socket_deinit()
     WSACleanup();
 }
 
-UHTTP_EXTERN uhttp_sock_t uhttp_socket(uhttp_addr_t* addr)
+UHTTP_EXTERN uhttp_socket_t uhttp_socket(uhttp_addr_t* addr)
 {
     if (addr == NULL) goto invalid;
 
@@ -32,7 +32,7 @@ UHTTP_EXTERN uhttp_sock_t uhttp_socket(uhttp_addr_t* addr)
     {
     case UHTTP_SOCKET_DOMAIN_INET4:
     {
-        uhttp_sock_t sck = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        uhttp_socket_t sck = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if (sck == INVALID_SOCKET)
         {
             errno = EAGAIN;
@@ -69,23 +69,23 @@ invalid:
     return UHTTP_INVALID_SOCKET;
 }
 
-UHTTP_EXTERN int uhttp_listen(uhttp_sock_t sock, int backlog)
+UHTTP_EXTERN int uhttp_listen(uhttp_socket_t sock, int backlog)
 {
     return listen(sock, backlog);
 }
 
-UHTTP_EXTERN int uhttp_async(uhttp_sock_t sock, int flag)
+UHTTP_EXTERN int uhttp_async(uhttp_socket_t sock, int flag)
 {
     u_long xflag = flag;
-    return ioctlsocket(sock, FIONREAD, &xflag);
+    return ioctlsocket(sock, FIONBIO, &xflag);
 }
 
-UHTTP_EXTERN uhttp_sock_t uhttp_accept(uhttp_sock_t sock, uhttp_addr_t* addr)
+UHTTP_EXTERN uhttp_socket_t uhttp_accept(uhttp_socket_t sock, uhttp_addr_t* addr)
 {
     struct sockaddr xaddr;
     int len = sizeof(xaddr);
 
-    uhttp_sock_t xsck = accept(sock, &xaddr, &len);
+    uhttp_socket_t xsck = accept(sock, &xaddr, &len);
 
     if (xsck == INVALID_SOCKET)
     {
@@ -112,58 +112,40 @@ UHTTP_EXTERN uhttp_sock_t uhttp_accept(uhttp_sock_t sock, uhttp_addr_t* addr)
     return xsck;
 }
 
-UHTTP_EXTERN int uhttp_poll(const uhttp_sock_t* socks, uhttp_event_t* events, size_t count)
+UHTTP_EXTERN int uhttp_poll(uhttp_socket_t sock, uhttp_event_t* events)
 {
-    if (socks == NULL || events == NULL)
-    {
-        errno = EINVAL;
-        return -1;
-    }
+    struct pollfd pollfd;
+    int error;
 
-    struct pollfd *xpoll = _malloca(count * sizeof(struct pollfd));
+    pollfd.fd = sock;
+    pollfd.events = POLLHUP | POLLIN | POLLERR;
 
-    if (xpoll == NULL)
-    {
-        errno = ENOMEM;
-        return -1;
-    }
+    error = WSAPoll(&pollfd, 1, 0);
 
-    for (size_t i = 0; i < count; i++)
-    {
-        xpoll[i].fd = socks[i];
-        xpoll[i].events = POLLERR | POLLHUP | POLLIN;
-    }
-
-    int error = WSAPoll(xpoll, count, 0);
     if (error)
     {
-        errno = EFAULT;
         return -1;
     }
 
-    for (size_t i = 0; i < count; i++)
-    {
-        events[i] = 0;
-        if (xpoll->revents & POLLHUP)  events[i] |= UHTTP_EVENT_HANGUP;
-        if (xpoll->revents & POLLERR)  events[i] |= UHTTP_EVENT_ERROR;
-        if (xpoll->revents & POLLIN) events[i] |= UHTTP_EVENT_RECEIVE;
-    }
+    *events = 0;
+    if (pollfd.revents & POLLHUP) *events |= UHTTP_EVENT_HANGUP;
+    if (pollfd.revents & POLLERR) *events |= UHTTP_EVENT_ERROR;
+    if (pollfd.revents & POLLIN) *events |= UHTTP_EVENT_RECEIVE;
 
-    _freea(xpoll);
     return 0;
 }
 
-UHTTP_EXTERN ssize_t uhttp_recv(uhttp_sock_t sock, void* buffer, size_t len)
+UHTTP_EXTERN ssize_t uhttp_recv(uhttp_socket_t sock, void* buffer, size_t len)
 {
     return recv(sock, buffer, len, 0);
 }
 
-UHTTP_EXTERN ssize_t uhttp_send(uhttp_sock_t sock, const void* buffer, size_t len)
+UHTTP_EXTERN ssize_t uhttp_send(uhttp_socket_t sock, const void* buffer, size_t len)
 {
     return send(sock, buffer, len, 0);
 }
 
-UHTTP_EXTERN void uhttp_close(uhttp_sock_t sock)
+UHTTP_EXTERN void uhttp_close(uhttp_socket_t sock)
 {
     closesocket(sock);
 }

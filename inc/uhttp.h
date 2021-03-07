@@ -26,7 +26,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#ifdef _WIN32
+#if _WIN32
 #include "winsock2.h"
 
 #ifdef _UHTTP_INTERNAL_
@@ -35,13 +35,13 @@
 #define UHTTP_EXTERN __declspec(dllimport) extern
 #endif
 
-typedef SOCKET uhttp_sock_t;
+typedef SOCKET uhttp_socket_t;
 typedef int64_t ssize_t;
 
 #else
 #define UHTTP_EXTERN extern
 
-typedef int uhttp_sock_t;
+typedef int uhttp_socket_t;
 #endif
 
 /* UHTTP SOCKETS */
@@ -64,7 +64,7 @@ typedef struct uhttp_addr_t
     uint8_t                    address[16];
 } uhttp_addr_t;
 
-#define UHTTP_INVALID_SOCKET ((uhttp_sock_t)-1)
+#define UHTTP_INVALID_SOCKET ((uhttp_socket_t)-1)
 
 
 /**
@@ -83,7 +83,7 @@ UHTTP_EXTERN void uhttp_socket_deinit();
  * @param Binding address of the socket.
  * @return A valid socket object or UHTTP_INVALID_SOCKET.
  */
-UHTTP_EXTERN uhttp_sock_t uhttp_socket(uhttp_addr_t* addr);
+UHTTP_EXTERN uhttp_socket_t uhttp_socket(uhttp_addr_t* addr);
 
 /**
  * Listen socket.
@@ -91,7 +91,7 @@ UHTTP_EXTERN uhttp_sock_t uhttp_socket(uhttp_addr_t* addr);
  * @param backlog Length of connection queue.
  * @return Zero when successfull, see errno otherwise.
  */
-UHTTP_EXTERN int uhttp_listen(uhttp_sock_t sock, int backlog);
+UHTTP_EXTERN int uhttp_listen(uhttp_socket_t sock, int backlog);
 
 /**
  * Set or reset socket async mode.
@@ -99,7 +99,7 @@ UHTTP_EXTERN int uhttp_listen(uhttp_sock_t sock, int backlog);
  * @param flag Zero to reset, anything else to reset.
  * @return Zero when successful, see errno otherwise.
  */
-UHTTP_EXTERN int uhttp_async(uhttp_sock_t sock, int flag);
+UHTTP_EXTERN int uhttp_async(uhttp_socket_t sock, int flag);
 
 /**
  * Accept connection.
@@ -107,16 +107,15 @@ UHTTP_EXTERN int uhttp_async(uhttp_sock_t sock, int flag);
  * @param addr Source address of new socket object.
  * @return A new socket object or UHTTP_INVALID_SOCKET if no incoming connections or an error.
  */
-UHTTP_EXTERN uhttp_sock_t uhttp_accept(uhttp_sock_t sock, uhttp_addr_t *addr);
+UHTTP_EXTERN uhttp_socket_t uhttp_accept(uhttp_socket_t sock, uhttp_addr_t *addr);
 
 /**
  * Poll socket events.
- * @param socks List of sockets.
- * @param events Returned list of events.
- * @param count Number of elements in lists.
+ * @param socks Socket to poll.
+ * @param events Bitmap of events.
  * @return Zero if successfull, see errno otherwise.
  */
-UHTTP_EXTERN int uhttp_poll(const uhttp_sock_t* socks, uhttp_event_t* events, size_t count);
+UHTTP_EXTERN int uhttp_poll(uhttp_socket_t sock, uhttp_event_t* events);
 
 /**
  * Recieve data.
@@ -125,7 +124,7 @@ UHTTP_EXTERN int uhttp_poll(const uhttp_sock_t* socks, uhttp_event_t* events, si
  * @param len Length of buffer.
  * @return Number of bytes read, or -1 for error (see errno).
  */
-UHTTP_EXTERN ssize_t uhttp_recv(uhttp_sock_t sock, void* buffer, size_t len);
+UHTTP_EXTERN ssize_t uhttp_recv(uhttp_socket_t sock, void* buffer, size_t len);
 
 /**
  * Send data.
@@ -134,13 +133,13 @@ UHTTP_EXTERN ssize_t uhttp_recv(uhttp_sock_t sock, void* buffer, size_t len);
  * @param len Length of data to send.
  * @return Number of bytes sent, or -1 for error (see errno).
  */
-UHTTP_EXTERN ssize_t uhttp_send(uhttp_sock_t sock, const void* buffer, size_t len);
+UHTTP_EXTERN ssize_t uhttp_send(uhttp_socket_t sock, const void* buffer, size_t len);
 
 /**
  * Close socket.
  * @param sock Socket object.
  */
-UHTTP_EXTERN void uhttp_close(uhttp_sock_t sock);
+UHTTP_EXTERN void uhttp_close(uhttp_socket_t sock);
 
 /* UHTTP SERVER */
 
@@ -173,13 +172,8 @@ typedef enum uhttp_option_name_t {
 typedef union uhttp_option_arg_t {
     /* Any option with a singular integer argument.*/
     int integer;
-
     /* Binding address. */
-    struct 
-    {
-        struct sockaddr addr;
-        int len;
-    } bind_addr;
+    uhttp_addr_t addr;
     /* Error callback. */
     uhttp_error_func_t error_func;
 } uhttp_option_arg_t;
@@ -231,7 +225,7 @@ UHTTP_EXTERN int uhttp_start(uhttp_server_t* sv);
  * @param sv Server object.
  * @return Zero when successful, see errno otherwise.
  */
-UHTTP_EXTERN int uhttp_poll(uhttp_server_t* sv);
+UHTTP_EXTERN int uhttp_pollevents(uhttp_server_t* sv);
 
 /**
  * Stop server, close all connections.

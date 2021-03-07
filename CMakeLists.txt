@@ -39,3 +39,4 @@ if(WIN32)
 	target_link_libraries(uhttp-cli ${WINSOCK2})
 endif()
 
+add_subdirectory("test")
