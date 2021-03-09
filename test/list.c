@@ -145,9 +145,9 @@ int uhttp_test_list_remove_odd()
     // retval == 0
     // nlen == 8
     // Only even values are left.
-    for (int i = 0; i < 7; i++)
+    for (int i = 1; i < 9; i++)
     {
-        if (uhttp_list_remove(&list, (2 * i) + 1))
+        if (uhttp_list_remove(&list, i))
             return 0;
     }
 

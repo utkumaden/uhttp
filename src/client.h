@@ -27,6 +27,7 @@
 #define _UHTTP_INTERNAL_CLIENT_H_
 
 #include "uhttp.h"
+#include "debug.h"
 
 typedef struct uhttp_client_t
 {

@@ -14,11 +14,10 @@ int uhttp_test_main(const test_t* tests)
     int result = 1;
     for (test_t* test = tests; test->name != NULL; test++, i++)
     {
-        printf("[%d] %s: ", i, test->name);
 
         result = test->func();
 
-        printf("%s\n", result ? "PASS" : "FAIL");
+        printf("[%d] %s: %s\n", i, test->name, result ? "PASS" : "FAIL");
 
         if (result == 0)
         {

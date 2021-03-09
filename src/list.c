@@ -81,7 +81,7 @@ int uhttp_list_remove(uhttp_list_t* list, int index)
     );
 
     // Downsize List.
-    void* xhead = realloc(list->head, (--list->nlen) * list->nsize);
+    void* xhead = realloc(list->head, (list->nlen--) * list->nsize);
     if (xhead || list->nlen == 0)
     {
         // Only write head to list if it is a valid pointer, it is ok to

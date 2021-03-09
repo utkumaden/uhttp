@@ -23,6 +23,7 @@
 
 #include "uhttp.h"
 
+#include "debug.h"
 #include "list.h"
 #include "client.h"
 
@@ -96,11 +97,14 @@ UHTTP_EXTERN void uhttp_destroy(uhttp_server_t* sv)
 
 UHTTP_EXTERN int uhttp_setoption(uhttp_server_t* sv, uhttp_option_name_t name, const uhttp_option_arg_t* value)
 {
+    uhttp_log("uhttp_setoption(%p, %d, %p)", sv, name, value);
+
     if (sv == NULL)
     {
         errno = EINVAL;
         return -1;
     }
+
 
     switch (name)
     {
@@ -129,11 +133,14 @@ UHTTP_EXTERN int uhttp_setoption(uhttp_server_t* sv, uhttp_option_name_t name, c
 
 UHTTP_EXTERN int uhttp_getoption(uhttp_server_t* sv, uhttp_option_name_t name, uhttp_option_arg_t* value)
 {
+    uhttp_log("uhttp_setoption(%p, %d, %p)", sv, name, value);
+
     if (sv == NULL)
     {
         errno = EINVAL;
         return -1;
     }
+
 
     switch (name)
     {
@@ -176,13 +183,22 @@ UHTTP_EXTERN int uhttp_start(uhttp_server_t* sv)
         return -1;
     }
 
+    uhttp_log("start: socket allocated");
+
     // Listen on socket.
     if (uhttp_listen(sv->sck, sv->backlog))
     {
         return -1;
     }
 
-    return uhttp_async(sv->sck, 1);
+    uhttp_log("start: listening socket.");
+
+    if (uhttp_async(sv->sck, 1))
+    {
+        return -1;
+    }
+
+    uhttp_log("start: set socket to async.");
 }
 
 UHTTP_EXTERN int uhttp_pollevents(uhttp_server_t* sv)
@@ -199,6 +215,8 @@ UHTTP_EXTERN int uhttp_pollevents(uhttp_server_t* sv)
         uhttp_socket_t xsck;
         while ((xsck = uhttp_accept(sv->sck, &addr)) != UHTTP_INVALID_SOCKET)
         {
+            uhttp_log("pollevents: Accepted socket %p.", (void*)xsck);
+
             uhttp_client_t client;
             if (uhttp_client_create(&client))
             {
@@ -211,12 +229,15 @@ UHTTP_EXTERN int uhttp_pollevents(uhttp_server_t* sv)
             client.sv = sv;
             memcpy(&client.src, &addr, sizeof(addr));
 
+
             if (uhttp_list_append(&sv->clients, &client))
             {
                 sv->on_error(errno, "Could not append client to list.");
                 uhttp_client_destroy(&client);
                 continue;
             }
+
+            uhttp_log("pollevents: client added to list.");
         }
     }
 
@@ -229,6 +250,11 @@ UHTTP_EXTERN int uhttp_pollevents(uhttp_server_t* sv)
             if (uhttp_poll(client->sck, &client->events) == 0)
             {
                 uhttp_client_event(client);
+                uhttp_log("pollevents: Events processed for client %p.", client);
+            }
+            else
+            {
+                uhttp_server_close_client(client);
             }
         }
     }
@@ -249,6 +275,7 @@ void uhttp_server_close_client(uhttp_client_t* client)
             break;
     }
 
+
     // Return if not found.
     if (i >= sv->clients.nlen) return;
 
@@ -257,6 +284,8 @@ void uhttp_server_close_client(uhttp_client_t* client)
 
     // Remove client.
     uhttp_list_remove(&sv->clients, i);
+
+    uhttp_log("server: client %p closed and removed from list.", client);
 }
 
 UHTTP_EXTERN int uhttp_stop(uhttp_server_t* sv)
@@ -277,6 +306,8 @@ UHTTP_EXTERN int uhttp_stop(uhttp_server_t* sv)
         uhttp_client_destroy(client);
     }
     uhttp_list_clear(&sv->clients);
+
+    uhttp_log("server: stopped.");
 
     return 0;
 }

@@ -27,6 +27,7 @@
 #define _UHTTP_INTERNAL_LIST_H_
 
 #include <stddef.h>
+#include "debug.h"
 
 typedef struct uhttp_list_t {
     void* head;
@@ -53,7 +54,7 @@ extern void uhttp_list_destroy(uhttp_list_t* list);
  * @param element Element to append.
  * @return Zero when successful, see errno otherwise.
  */
-extern int uhttp_list_append(uhttp_list_t* list, void* element);
+extern int uhttp_list_append(uhttp_list_t* list, const void* element);
 
 /**
  * Remove element from list.

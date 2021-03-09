@@ -2,6 +2,8 @@
 #define _UHTTP_INTERNAL_
 #include "uhttp.h"
 
+#include "debug.h"
+
 #include <errno.h>
 #include <malloc.h>
 
@@ -91,7 +93,7 @@ UHTTP_EXTERN uhttp_socket_t uhttp_accept(uhttp_socket_t sock, uhttp_addr_t* addr
     {
         return UHTTP_INVALID_SOCKET;
     }
-    
+
     if (addr)
     {
         if (xaddr.sa_family == AF_INET)
@@ -118,9 +120,11 @@ UHTTP_EXTERN int uhttp_poll(uhttp_socket_t sock, uhttp_event_t* events)
     int error;
 
     pollfd.fd = sock;
-    pollfd.events = POLLHUP | POLLIN | POLLERR;
+    pollfd.events = POLLPRI | POLLRDBAND | POLLRDNORM | POLLWRNORM;
 
     error = WSAPoll(&pollfd, 1, 0);
+
+    uhttp_log("%d", WSAGetLastError());
 
     if (error)
     {

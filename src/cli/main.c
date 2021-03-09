@@ -1,5 +1,6 @@
-#define _UHHTP_INTERNAL_
+#define _UHTTP_INTERNAL_
 #include "uhttp.h"
+#include "debug.h"
 
 #include <string.h>
 #include <stdio.h>
